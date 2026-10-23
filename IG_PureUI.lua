@@ -555,7 +555,6 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     if FlyEnabled then
         FlyEnabled = false
         stopFly()
-        if toggles.Fly then toggles.Fly.Set(false) end
     end
 end)
 
@@ -792,23 +791,214 @@ local function startFly()
     end)
 end
 
--- 飞行开关
-toggles.Fly = CreateToggle("飞行", false, function(v)
-    FlyEnabled = v
-    if v then
+-- ==================== 飞行小面板 ====================
+local FlyPanel = Instance.new("Frame")
+FlyPanel.Name = "FlyPanel"
+FlyPanel.Size = UDim2.new(0, 200, 0, 140)
+FlyPanel.Position = UDim2.new(0.5, -100, 0.3, 0)
+FlyPanel.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+FlyPanel.BorderSizePixel = 0
+FlyPanel.Visible = false
+FlyPanel.Parent = ScreenGui
+
+local FlyPanelCorner = Instance.new("UICorner")
+FlyPanelCorner.CornerRadius = UDim.new(0, 8)
+FlyPanelCorner.Parent = FlyPanel
+
+local FlyPanelStroke = Instance.new("UIStroke")
+FlyPanelStroke.Color = Color3.fromRGB(60, 60, 70)
+FlyPanelStroke.Thickness = 1
+FlyPanelStroke.Parent = FlyPanel
+
+-- 标题栏
+local FlyTitle = Instance.new("Frame")
+FlyTitle.Size = UDim2.new(1, 0, 0, 28)
+FlyTitle.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
+FlyTitle.BorderSizePixel = 0
+FlyTitle.Parent = FlyPanel
+
+local FlyTitleCorner = Instance.new("UICorner")
+FlyTitleCorner.CornerRadius = UDim.new(0, 8)
+FlyTitleCorner.Parent = FlyTitle
+
+local FlyTitleFix = Instance.new("Frame")
+FlyTitleFix.Size = UDim2.new(1, 0, 0, 6)
+FlyTitleFix.Position = UDim2.new(0, 0, 1, -6)
+FlyTitleFix.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
+FlyTitleFix.BorderSizePixel = 0
+FlyTitleFix.Parent = FlyTitle
+
+local FlyTitleLabel = Instance.new("TextLabel")
+FlyTitleLabel.Size = UDim2.new(1, -30, 1, 0)
+FlyTitleLabel.Position = UDim2.new(0, 8, 0, 0)
+FlyTitleLabel.BackgroundTransparency = 1
+FlyTitleLabel.Text = "飞行控制"
+FlyTitleLabel.TextColor3 = Color3.fromRGB(230, 230, 235)
+FlyTitleLabel.TextSize = 13
+FlyTitleLabel.Font = Enum.Font.GothamBold
+FlyTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+FlyTitleLabel.Parent = FlyTitle
+
+local FlyClose = Instance.new("TextButton")
+FlyClose.Size = UDim2.new(0, 22, 0, 22)
+FlyClose.Position = UDim2.new(1, -26, 0, 3)
+FlyClose.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
+FlyClose.Text = "×"
+FlyClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+FlyClose.TextSize = 16
+FlyClose.Font = Enum.Font.GothamBold
+FlyClose.Parent = FlyTitle
+local FlyCloseCorner = Instance.new("UICorner")
+FlyCloseCorner.CornerRadius = UDim.new(0, 4)
+FlyCloseCorner.Parent = FlyClose
+
+FlyClose.MouseButton1Click:Connect(function()
+    FlyPanel.Visible = false
+    if FlyEnabled then
+        FlyEnabled = false
+        stopFly()
+    end
+end)
+
+-- 拖动
+local flyDragging, flyDragStart, flyStartPos
+FlyTitle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        flyDragging = true
+        flyDragStart = input.Position
+        flyStartPos = FlyPanel.Position
+    end
+end)
+FlyTitle.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        flyDragging = false
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if flyDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - flyDragStart
+        FlyPanel.Position = UDim2.new(flyStartPos.X.Scale, flyStartPos.X.Offset + delta.X, flyStartPos.Y.Scale, flyStartPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- 内容区
+local FlyContent = Instance.new("Frame")
+FlyContent.Size = UDim2.new(1, -12, 1, -36)
+FlyContent.Position = UDim2.new(0, 6, 0, 32)
+FlyContent.BackgroundTransparency = 1
+FlyContent.Parent = FlyPanel
+
+-- UP / DOWN / Fly 按钮行
+local function makeFlyBtn(text, x, y, w, h, color, parent)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, w, 0, h)
+    btn.Position = UDim2.new(0, x, 0, y)
+    btn.BackgroundColor3 = color
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(230, 230, 235)
+    btn.TextSize = 12
+    btn.Font = Enum.Font.GothamMedium
+    btn.Parent = parent
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 5)
+    c.Parent = btn
+    return btn
+end
+
+local upBtn = makeFlyBtn("UP", 0, 0, 58, 28, Color3.fromRGB(50, 50, 60), FlyContent)
+local downBtn = makeFlyBtn("DOWN", 64, 0, 58, 28, Color3.fromRGB(50, 50, 60), FlyContent)
+local flyBtn = makeFlyBtn("飞行", 128, 0, 58, 28, Color3.fromRGB(55, 55, 65), FlyContent)
+
+-- 速度行
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(0, 40, 0, 28)
+speedLabel.Position = UDim2.new(0, 0, 0, 36)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Text = "速度"
+speedLabel.TextColor3 = Color3.fromRGB(200, 200, 210)
+speedLabel.TextSize = 12
+speedLabel.Font = Enum.Font.Gotham
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+speedLabel.Parent = FlyContent
+
+local minusBtn = makeFlyBtn("-", 42, 36, 28, 28, Color3.fromRGB(50, 50, 60), FlyContent)
+local speedVal = Instance.new("TextLabel")
+speedVal.Size = UDim2.new(0, 40, 0, 28)
+speedVal.Position = UDim2.new(0, 74, 0, 36)
+speedVal.BackgroundTransparency = 1
+speedVal.Text = "50"
+speedVal.TextColor3 = Color3.fromRGB(180, 220, 180)
+speedVal.TextSize = 14
+speedVal.Font = Enum.Font.GothamBold
+speedVal.Parent = FlyContent
+
+local plusBtn = makeFlyBtn("+", 116, 36, 28, 28, Color3.fromRGB(50, 50, 60), FlyContent)
+
+-- 飞行逻辑
+local function updateFlyBtn()
+    flyBtn.BackgroundColor3 = FlyEnabled and Color3.fromRGB(70, 160, 90) or Color3.fromRGB(55, 55, 65)
+    flyBtn.Text = FlyEnabled and "飞行中" or "飞行"
+end
+
+flyBtn.MouseButton1Click:Connect(function()
+    FlyEnabled = not FlyEnabled
+    if FlyEnabled then
         startFly()
-        Notify("开启", "飞行 (WASD + 空格/Ctrl)")
+        Notify("开启", "飞行")
     else
         stopFly()
         Notify("关闭", "飞行")
     end
+    updateFlyBtn()
 end)
 
--- 飞行速度输入
-CreateInputRow("飞速", 50, function(v)
-    -- 这个开关不单独控制，飞行速度始终可调
-end, function(v)
-    FlySpeed = math.max(1, v)
+plusBtn.MouseButton1Click:Connect(function()
+    FlySpeed = math.min(FlySpeed + 10, 500)
+    speedVal.Text = tostring(FlySpeed)
+end)
+
+minusBtn.MouseButton1Click:Connect(function()
+    FlySpeed = math.max(FlySpeed - 10, 5)
+    speedVal.Text = tostring(FlySpeed)
+end)
+
+-- UP / DOWN 持续上升下降
+local upHolding, downHolding = false, false
+
+upBtn.MouseButton1Down:Connect(function() upHolding = true end)
+upBtn.MouseButton1Up:Connect(function() upHolding = false end)
+upBtn.MouseLeave:Connect(function() upHolding = false end)
+
+downBtn.MouseButton1Down:Connect(function() downHolding = true end)
+downBtn.MouseButton1Up:Connect(function() downHolding = false end)
+downBtn.MouseLeave:Connect(function() downHolding = false end)
+
+-- 把上下控制加入飞行循环
+local oldStartFly = startFly
+startFly = function()
+    oldStartFly()
+    -- 额外的上下按住逻辑通过 RenderStepped 处理
+end
+
+-- 在现有 flyConn 之外再加一个轻量检查（实际上下已在 startFly 的 RenderStepped 里通过键盘处理）
+-- 这里给按钮补一个持续位移
+RunService.RenderStepped:Connect(function()
+    if not FlyEnabled then return end
+    local char = LocalPlayer.Character
+    local root = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
+    if not root or not flyBV then return end
+
+    local extra = Vector3.zero
+    if upHolding then extra = extra + Vector3.new(0, FlySpeed, 0) end
+    if downHolding then extra = extra + Vector3.new(0, -FlySpeed, 0) end
+    if extra.Magnitude > 0 then
+        flyBV.Velocity = flyBV.Velocity + extra
+    end
+end)
+
+-- 主界面按钮打开飞行面板
+CreateButton("飞行控制", function()
+    FlyPanel.Visible = not FlyPanel.Visible
 end)
 
 -- ==================== 清理 ====================
