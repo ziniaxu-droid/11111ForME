@@ -266,7 +266,7 @@ ScreenGui.Parent = CoreGui
 
 local Main = Instance.new("Frame")
 Main.Name = "Main"
-Main.Size = UDim2.new(0, 280, 0, 320)
+Main.Size = UDim2.new(0, 280, 0, 420)
 Main.Position = UDim2.new(0.5, -140, 0.5, -160)
 Main.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 Main.BorderSizePixel = 0
@@ -488,6 +488,209 @@ toggles.AL = CreateToggle("锁定最近", false, function(v)
     Notify(v and "开启" or "关闭", "锁定最近")
 end)
 
+-- ==================== 速度 / 跳跃 ====================
+local SpeedEnabled = false
+local JumpEnabled = false
+local SpeedValue = 16
+local JumpValue = 50
+local OriginalSpeed = nil
+local OriginalJump = nil
+
+local function captureOriginal()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if OriginalSpeed == nil then
+            OriginalSpeed = hum.WalkSpeed
+        end
+        if OriginalJump == nil then
+            OriginalJump = hum.JumpPower
+        end
+    end
+end
+
+local function applySpeed()
+    if not SpeedEnabled then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.WalkSpeed = SpeedValue
+    end
+end
+
+local function applyJump()
+    if not JumpEnabled then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.JumpPower = JumpValue
+        hum.UseJumpPower = true
+    end
+end
+
+local function restoreSpeed()
+    if OriginalSpeed == nil then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.WalkSpeed = OriginalSpeed
+    end
+end
+
+local function restoreJump()
+    if OriginalJump == nil then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.JumpPower = OriginalJump
+    end
+end
+
+-- 角色生成时记录原始值
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.3)
+    captureOriginal()
+    if SpeedEnabled then applySpeed() end
+    if JumpEnabled then applyJump() end
+end)
+
+-- 如果角色已经存在，立即记录
+if LocalPlayer.Character then
+    task.defer(captureOriginal)
+end
+
+-- 持续保持（仅开启时）
+task.spawn(function()
+    while AL do
+        if SpeedEnabled then applySpeed() end
+        if JumpEnabled then applyJump() end
+        task.wait(0.5)
+    end
+end)
+
+-- 创建输入行（带开关）
+local function CreateInputRow(name, defaultVal, onToggle, onValueChange)
+    local Row = Instance.new("Frame")
+    Row.Size = UDim2.new(1, 0, 0, 36)
+    Row.BackgroundColor3 = Color3.fromRGB(32, 32, 38)
+    Row.BorderSizePixel = 0
+    Row.Parent = Content
+
+    local RowCorner = Instance.new("UICorner")
+    RowCorner.CornerRadius = UDim.new(0, 6)
+    RowCorner.Parent = Row
+
+    -- 开关
+    local Toggle = Instance.new("TextButton")
+    Toggle.Size = UDim2.new(0, 36, 0, 18)
+    Toggle.Position = UDim2.new(0, 8, 0.5, -9)
+    Toggle.BackgroundColor3 = Color3.fromRGB(55, 55, 65)
+    Toggle.Text = ""
+    Toggle.Parent = Row
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(1, 0)
+    ToggleCorner.Parent = Toggle
+
+    local Knob = Instance.new("Frame")
+    Knob.Size = UDim2.new(0, 14, 0, 14)
+    Knob.Position = UDim2.new(0, 2, 0.5, -7)
+    Knob.BackgroundColor3 = Color3.fromRGB(240, 240, 245)
+    Knob.BorderSizePixel = 0
+    Knob.Parent = Toggle
+    local KnobCorner = Instance.new("UICorner")
+    KnobCorner.CornerRadius = UDim.new(1, 0)
+    KnobCorner.Parent = Knob
+
+    -- 名称
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0, 50, 1, 0)
+    Label.Position = UDim2.new(0, 50, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = name
+    Label.TextColor3 = Color3.fromRGB(220, 220, 225)
+    Label.TextSize = 13
+    Label.Font = Enum.Font.Gotham
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Row
+
+    -- 输入框
+    local Input = Instance.new("TextBox")
+    Input.Size = UDim2.new(0, 70, 0, 24)
+    Input.Position = UDim2.new(1, -80, 0.5, -12)
+    Input.BackgroundColor3 = Color3.fromRGB(45, 45, 52)
+    Input.Text = tostring(defaultVal)
+    Input.PlaceholderText = "数值"
+    Input.TextColor3 = Color3.fromRGB(200, 220, 200)
+    Input.PlaceholderColor3 = Color3.fromRGB(100, 100, 110)
+    Input.TextSize = 13
+    Input.Font = Enum.Font.Gotham
+    Input.ClearTextOnFocus = false
+    Input.Parent = Row
+    local InputCorner = Instance.new("UICorner")
+    InputCorner.CornerRadius = UDim.new(0, 4)
+    InputCorner.Parent = Input
+
+    local enabled = false
+
+    local function setEnabled(v)
+        enabled = v
+        Toggle.BackgroundColor3 = v and Color3.fromRGB(70, 160, 90) or Color3.fromRGB(55, 55, 65)
+        Knob.Position = v and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
+        if onToggle then onToggle(v) end
+    end
+
+    Toggle.MouseButton1Click:Connect(function()
+        setEnabled(not enabled)
+    end)
+
+    Input.FocusLost:Connect(function()
+        local num = tonumber(Input.Text)
+        if num and num > 0 then
+            if onValueChange then onValueChange(num) end
+        else
+            Input.Text = tostring(defaultVal)
+            if onValueChange then onValueChange(defaultVal) end
+        end
+    end)
+
+    return {
+        SetEnabled = setEnabled,
+        GetEnabled = function() return enabled end,
+        SetValue = function(v)
+            Input.Text = tostring(v)
+            if onValueChange then onValueChange(v) end
+        end
+    }
+end
+
+local speedRow = CreateInputRow("速度", 16, function(v)
+    SpeedEnabled = v
+    if v then
+        applySpeed()
+        Notify("开启", "速度修改")
+    else
+        restoreSpeed()
+        Notify("关闭", "已恢复原始速度")
+    end
+end, function(v)
+    SpeedValue = v
+    if SpeedEnabled then applySpeed() end
+end)
+
+local jumpRow = CreateInputRow("跳跃", 50, function(v)
+    JumpEnabled = v
+    if v then
+        applyJump()
+        Notify("开启", "跳跃修改")
+    else
+        restoreJump()
+        Notify("关闭", "已恢复原始跳跃")
+    end
+end, function(v)
+    JumpValue = v
+    if JumpEnabled then applyJump() end
+end)
+
 -- ==================== 清理 ====================
 getgenv().igClean = function()
     AL = false
@@ -504,7 +707,7 @@ getgenv().igClean = function()
     if notifySound then notifySound:Destroy() end
 end
 
-Notify("加载完成", "点击右下角圆点或按 Insert 隐藏/显示")
+Notify("加载完成", "点击右上角圆点或按 Insert 隐藏/显示")
 
 -- ==================== 悬浮开关圆点 ====================
 local ToggleDot = Instance.new("TextButton")
