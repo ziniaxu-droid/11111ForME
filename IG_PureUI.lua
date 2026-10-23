@@ -504,12 +504,65 @@ getgenv().igClean = function()
     if notifySound then notifySound:Destroy() end
 end
 
-Notify("加载完成", "按 Insert 隐藏/显示")
+Notify("加载完成", "点击右下角圆点或按 Insert 隐藏/显示")
+
+-- ==================== 悬浮开关圆点 ====================
+local ToggleDot = Instance.new("TextButton")
+ToggleDot.Name = "ToggleDot"
+ToggleDot.Size = UDim2.new(0, 36, 0, 36)
+ToggleDot.Position = UDim2.new(1, -50, 1, -50)
+ToggleDot.AnchorPoint = Vector2.new(1, 1)
+ToggleDot.BackgroundColor3 = Color3.fromRGB(70, 160, 90)
+ToggleDot.Text = ""
+ToggleDot.AutoButtonColor = false
+ToggleDot.Parent = ScreenGui
+
+local DotCorner = Instance.new("UICorner")
+DotCorner.CornerRadius = UDim.new(1, 0)
+DotCorner.Parent = ToggleDot
+
+local DotStroke = Instance.new("UIStroke")
+DotStroke.Color = Color3.fromRGB(100, 200, 120)
+DotStroke.Thickness = 2
+DotStroke.Parent = ToggleDot
+
+-- 圆点拖动
+local dotDragging, dotDragStart, dotStartPos
+ToggleDot.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dotDragging = true
+        dotDragStart = input.Position
+        dotStartPos = ToggleDot.Position
+    end
+end)
+ToggleDot.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dotDragging = false
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dotDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dotDragStart
+        ToggleDot.Position = UDim2.new(
+            dotStartPos.X.Scale, dotStartPos.X.Offset + delta.X,
+            dotStartPos.Y.Scale, dotStartPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- 点击圆点切换主界面
+local function toggleMain()
+    Main.Visible = not Main.Visible
+    ToggleDot.BackgroundColor3 = Main.Visible and Color3.fromRGB(70, 160, 90) or Color3.fromRGB(80, 80, 90)
+    DotStroke.Color = Main.Visible and Color3.fromRGB(100, 200, 120) or Color3.fromRGB(120, 120, 130)
+end
+
+ToggleDot.MouseButton1Click:Connect(toggleMain)
 
 -- Insert 键开关 UI
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.Insert then
-        Main.Visible = not Main.Visible
+        toggleMain()
     end
 end)
