@@ -510,8 +510,8 @@ Notify("加载完成", "点击右下角圆点或按 Insert 隐藏/显示")
 local ToggleDot = Instance.new("TextButton")
 ToggleDot.Name = "ToggleDot"
 ToggleDot.Size = UDim2.new(0, 36, 0, 36)
-ToggleDot.Position = UDim2.new(1, -50, 1, -50)
-ToggleDot.AnchorPoint = Vector2.new(1, 1)
+ToggleDot.Position = UDim2.new(1, -50, 0, 80)
+ToggleDot.AnchorPoint = Vector2.new(1, 0)
 ToggleDot.BackgroundColor3 = Color3.fromRGB(70, 160, 90)
 ToggleDot.Text = ""
 ToggleDot.AutoButtonColor = false
