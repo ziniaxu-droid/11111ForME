@@ -266,7 +266,7 @@ ScreenGui.Parent = CoreGui
 
 local Main = Instance.new("Frame")
 Main.Name = "Main"
-Main.Size = UDim2.new(0, 280, 0, 420)
+Main.Size = UDim2.new(0, 280, 0, 500)
 Main.Position = UDim2.new(0.5, -140, 0.5, -160)
 Main.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 Main.BorderSizePixel = 0
@@ -546,12 +546,17 @@ local function restoreJump()
     end
 end
 
--- 角色生成时记录原始值
+-- 角色生成时记录原始值 + 停止飞行
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(0.3)
     captureOriginal()
     if SpeedEnabled then applySpeed() end
     if JumpEnabled then applyJump() end
+    if FlyEnabled then
+        FlyEnabled = false
+        stopFly()
+        if toggles.Fly then toggles.Fly.Set(false) end
+    end
 end)
 
 -- 如果角色已经存在，立即记录
@@ -691,6 +696,121 @@ end, function(v)
     if JumpEnabled then applyJump() end
 end)
 
+-- ==================== 飞行 ====================
+local FlyEnabled = false
+local FlySpeed = 50
+local flyBV, flyBG
+local flyConn
+
+local function stopFly()
+    if flyConn then
+        flyConn:Disconnect()
+        flyConn = nil
+    end
+    if flyBV then pcall(function() flyBV:Destroy() end) flyBV = nil end
+    if flyBG then pcall(function() flyBG:Destroy() end) flyBG = nil end
+
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.PlatformStand = false
+        pcall(function()
+            for _, state in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
+                hum:SetStateEnabled(state, true)
+            end
+            hum:ChangeState(Enum.HumanoidStateType.Running)
+        end)
+    end
+    local animate = char and char:FindFirstChild("Animate")
+    if animate then animate.Disabled = false end
+end
+
+local function startFly()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    if not hum or not root then return end
+
+    stopFly()
+
+    -- 禁用状态
+    pcall(function()
+        for _, state in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
+            hum:SetStateEnabled(state, false)
+        end
+        hum:ChangeState(Enum.HumanoidStateType.Swimming)
+    end)
+    hum.PlatformStand = true
+    local animate = char:FindFirstChild("Animate")
+    if animate then animate.Disabled = true end
+
+    flyBG = Instance.new("BodyGyro")
+    flyBG.P = 9e4
+    flyBG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    flyBG.CFrame = root.CFrame
+    flyBG.Parent = root
+
+    flyBV = Instance.new("BodyVelocity")
+    flyBV.Velocity = Vector3.zero
+    flyBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    flyBV.Parent = root
+
+    local ctrl = { f = 0, b = 0, l = 0, r = 0 }
+
+    flyConn = RunService.RenderStepped:Connect(function()
+        if not FlyEnabled or not root.Parent then
+            stopFly()
+            return
+        end
+
+        local cam = Workspace.CurrentCamera
+        if not cam then return end
+
+        -- 读取输入
+        ctrl.f = UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0
+        ctrl.b = UserInputService:IsKeyDown(Enum.KeyCode.S) and -1 or 0
+        ctrl.l = UserInputService:IsKeyDown(Enum.KeyCode.A) and -1 or 0
+        ctrl.r = UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0
+
+        local move = Vector3.zero
+        if ctrl.f + ctrl.b ~= 0 or ctrl.l + ctrl.r ~= 0 then
+            local look = cam.CFrame.LookVector
+            local right = cam.CFrame.RightVector
+            move = (look * (ctrl.f + ctrl.b) + right * (ctrl.l + ctrl.r)).Unit * FlySpeed
+        end
+
+        -- 上下
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            move = move + Vector3.new(0, FlySpeed, 0)
+        elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+            move = move + Vector3.new(0, -FlySpeed, 0)
+        end
+
+        flyBV.Velocity = move
+        flyBG.CFrame = cam.CFrame
+    end)
+end
+
+-- 飞行开关
+toggles.Fly = CreateToggle("飞行", false, function(v)
+    FlyEnabled = v
+    if v then
+        startFly()
+        Notify("开启", "飞行 (WASD + 空格/Ctrl)")
+    else
+        stopFly()
+        Notify("关闭", "飞行")
+    end
+end)
+
+-- 飞行速度输入
+CreateInputRow("飞速", 50, function(v)
+    -- 这个开关不单独控制，飞行速度始终可调
+end, function(v)
+    FlySpeed = math.max(1, v)
+end)
+
 -- ==================== 清理 ====================
 getgenv().igClean = function()
     AL = false
@@ -699,6 +819,8 @@ getgenv().igClean = function()
     CN = {}
     EN.esp = false
     EN.al = false
+    FlyEnabled = false
+    stopFly()
     ec()
     rsA()
     rsW()
