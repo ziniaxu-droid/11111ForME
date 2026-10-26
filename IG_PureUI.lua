@@ -65,8 +65,31 @@ local function sw(a)
     for _, d in ipairs(a:GetDescendants()) do g(d) end
 end
 
+local function isFloor(part)
+    if not part:IsA("BasePart") then return false end
+    local size = part.Size
+    -- 扁平零件视为地板（高度远小于长宽）
+    local isFlat = size.Y < math.max(size.X, size.Z) * 0.35 and size.Y < 8
+    if not isFlat then return false end
+    -- 如果角色存在，只跳过脚下方的地板
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then
+        local diff = root.Position.Y - part.Position.Y
+        -- 只保护角色脚下附近的地板
+        if diff > -2 and diff < 15 then
+            return true
+        end
+    else
+        -- 没有角色时，扁平的都当地板
+        return true
+    end
+    return false
+end
+
 local function gw(o)
     if o:IsA("BasePart") then
+        if isFloor(o) then return end
         if REC[o] == nil then REC[o] = { c = o.CanCollide } end
         pcall(function()
             o.CanTouch = false
