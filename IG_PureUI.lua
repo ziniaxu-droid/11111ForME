@@ -728,102 +728,7 @@ local function CreateInputRow(parent, name, defaultVal, onToggle, onValueChange)
     return { SetEnabled = setEnabled, GetEnabled = function() return enabled end }
 end
 
--- ==================== 分页内容 ====================
-local pageEnemy = createPage("敌人")
-local pageInv = createPage("无敌")
-local pageChar = createPage("角色")
-
--- 敌人页
-CreateToggle(pageEnemy, "敌人 ESP", false, function(v)
-    EN.esp = v
-    if v then es() else ec() end
-    Notify(v and "开启" or "关闭", "敌人 ESP")
-end)
-
-CreateToggle(pageEnemy, "锁定最近", false, function(v)
-    EN.al = v
-    Notify(v and "开启" or "关闭", "锁定最近")
-end)
-
--- 无敌页
-CreateToggle(pageInv, "无视攻击", false, function(v)
-    IG.on = v
-    if v then
-        local a = Workspace:FindFirstChild("AttackModel")
-        if a then bind(a) end
-        Notify("开启", "无视攻击")
-    else
-        if CON then pcall(function() CON:Disconnect() end) end
-        CON = nil
-        AM = nil
-        task.delay(0.6, rsA)
-        Notify("关闭", "无视攻击")
-    end
-end)
-
-CreateToggle(pageInv, "全图无视", false, function(v)
-    IGW.on = v
-    if v then
-        swW()
-        Notify("开启", "全图无视")
-    else
-        task.delay(0.2, rsW)
-        Notify("关闭", "全图无视")
-    end
-end)
-
-CreateButton(pageInv, "强制恢复", function()
-    IG.on = false
-    IGW.on = false
-    if CON then pcall(function() CON:Disconnect() end) end
-    CON = nil
-    AM = nil
-    task.delay(0.6, function()
-        rsA()
-        rsW()
-        Notify("完成", "已恢复")
-    end)
-end)
-
--- 角色页
-CreateInputRow(pageChar, "速度", 16, function(v)
-    SpeedEnabled = v
-    if v then
-        applySpeed()
-        Notify("开启", "速度修改")
-    else
-        restoreSpeed()
-        Notify("关闭", "已恢复原始速度")
-    end
-end, function(v)
-    SpeedValue = v
-    if SpeedEnabled then applySpeed() end
-end)
-
-CreateInputRow(pageChar, "跳跃", 50, function(v)
-    JumpEnabled = v
-    if v then
-        applyJump()
-        Notify("开启", "跳跃修改")
-    else
-        restoreJump()
-        Notify("关闭", "已恢复原始跳跃")
-    end
-end, function(v)
-    JumpValue = v
-    if JumpEnabled then applyJump() end
-end)
-
-CreateButton(pageChar, "飞行控制", function()
-    if FlyPanel then
-        FlyPanel.Visible = not FlyPanel.Visible
-    end
-end)
-
--- 默认显示敌人页
-switchPage("敌人")
-
--- ==================== 飞行小面板 ====================
+-- ==================== 飞行小面板（提前创建） ====================
 local FlyPanel = Instance.new("Frame")
 FlyPanel.Name = "FlyPanel"
 FlyPanel.Size = UDim2.new(0, 200, 0, 140)
@@ -992,6 +897,138 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- ==================== 分页内容 ====================
+local pageEnemy = createPage("敌人")
+local pageInv = createPage("无敌")
+local pageChar = createPage("角色")
+
+-- 敌人页
+CreateToggle(pageEnemy, "敌人 ESP", false, function(v)
+    EN.esp = v
+    if v then es() else ec() end
+    Notify(v and "开启" or "关闭", "敌人 ESP")
+end)
+
+CreateToggle(pageEnemy, "锁定最近", false, function(v)
+    EN.al = v
+    Notify(v and "开启" or "关闭", "锁定最近")
+end)
+
+-- 无敌页
+CreateToggle(pageInv, "无视攻击", false, function(v)
+    IG.on = v
+    if v then
+        local a = Workspace:FindFirstChild("AttackModel")
+        if a then bind(a) end
+        Notify("开启", "无视攻击")
+    else
+        if CON then pcall(function() CON:Disconnect() end) end
+        CON = nil
+        AM = nil
+        task.delay(0.6, rsA)
+        Notify("关闭", "无视攻击")
+    end
+end)
+
+CreateToggle(pageInv, "全图无视", false, function(v)
+    IGW.on = v
+    if v then
+        swW()
+        Notify("开启", "全图无视")
+    else
+        task.delay(0.2, rsW)
+        Notify("关闭", "全图无视")
+    end
+end)
+
+-- ForceField 无敌
+local FFEnabled = false
+local function applyFF(on)
+    local char = LocalPlayer.Character
+    if not char then return end
+    if on then
+        if not char:FindFirstChildOfClass("ForceField") then
+            Instance.new("ForceField", char)
+        end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then
+                p.CanTouch = false
+            end
+        end
+    else
+        local ff = char:FindFirstChildOfClass("ForceField")
+        if ff then ff:Destroy() end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then
+                p.CanTouch = true
+            end
+        end
+    end
+end
+
+CreateToggle(pageInv, "力场无敌", false, function(v)
+    FFEnabled = v
+    applyFF(v)
+    Notify(v and "开启" or "关闭", "力场无敌")
+end)
+
+CreateButton(pageInv, "强制恢复", function()
+    IG.on = false
+    IGW.on = false
+    FFEnabled = false
+    applyFF(false)
+    if CON then pcall(function() CON:Disconnect() end) end
+    CON = nil
+    AM = nil
+    task.delay(0.6, function()
+        rsA()
+        rsW()
+        Notify("完成", "已恢复")
+    end)
+end)
+
+-- 角色页
+CreateInputRow(pageChar, "速度", 16, function(v)
+    SpeedEnabled = v
+    if v then
+        applySpeed()
+        Notify("开启", "速度修改")
+    else
+        restoreSpeed()
+        Notify("关闭", "已恢复原始速度")
+    end
+end, function(v)
+    SpeedValue = v
+    if SpeedEnabled then applySpeed() end
+end)
+
+CreateInputRow(pageChar, "跳跃", 50, function(v)
+    JumpEnabled = v
+    if v then
+        applyJump()
+        Notify("开启", "跳跃修改")
+    else
+        restoreJump()
+        Notify("关闭", "已恢复原始跳跃")
+    end
+end, function(v)
+    JumpValue = v
+    if JumpEnabled then applyJump() end
+end)
+
+CreateButton(pageChar, "飞行控制", function()
+    FlyPanel.Visible = not FlyPanel.Visible
+end)
+
+-- 默认显示敌人页
+switchPage("敌人")
+
+-- 角色重生时重新应用力场
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if FFEnabled then applyFF(true) end
+end)
+
 -- 角色重生
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.3)
@@ -1055,6 +1092,8 @@ getgenv().igClean = function()
     EN.esp = false
     EN.al = false
     FlyEnabled = false
+    FFEnabled = false
+    applyFF(false)
     stopFly()
     ec()
     rsA()
