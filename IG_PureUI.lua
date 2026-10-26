@@ -5,7 +5,6 @@ local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
-local Camera = Workspace.CurrentCamera
 
 -- 清理旧实例
 if getgenv().igClean then pcall(getgenv().igClean) end
@@ -257,7 +256,153 @@ keep(RunService.RenderStepped:Connect(function()
     cm.CFrame = CFrame.lookAt(cm.CFrame.Position, bp.Position)
 end))
 
--- ==================== 纯手写 UI ====================
+-- ==================== 速度 / 跳跃 / 飞行变量 ====================
+local SpeedEnabled = false
+local JumpEnabled = false
+local SpeedValue = 16
+local JumpValue = 50
+local OriginalSpeed = nil
+local OriginalJump = nil
+
+local FlyEnabled = false
+local FlySpeed = 50
+local flyBV, flyBG
+local flyConn
+
+local function captureOriginal()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if OriginalSpeed == nil then OriginalSpeed = hum.WalkSpeed end
+        if OriginalJump == nil then OriginalJump = hum.JumpPower end
+    end
+end
+
+local function applySpeed()
+    if not SpeedEnabled then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.WalkSpeed = SpeedValue end
+end
+
+local function applyJump()
+    if not JumpEnabled then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.JumpPower = JumpValue
+        hum.UseJumpPower = true
+    end
+end
+
+local function restoreSpeed()
+    if OriginalSpeed == nil then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.WalkSpeed = OriginalSpeed end
+end
+
+local function restoreJump()
+    if OriginalJump == nil then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.JumpPower = OriginalJump end
+end
+
+local function stopFly()
+    if flyConn then flyConn:Disconnect() flyConn = nil end
+    if flyBV then pcall(function() flyBV:Destroy() end) flyBV = nil end
+    if flyBG then pcall(function() flyBG:Destroy() end) flyBG = nil end
+
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.PlatformStand = false
+        pcall(function()
+            for _, state in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
+                hum:SetStateEnabled(state, true)
+            end
+            hum:ChangeState(Enum.HumanoidStateType.Running)
+        end)
+    end
+    local animate = char and char:FindFirstChild("Animate")
+    if animate then animate.Disabled = false end
+end
+
+local function startFly()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    if not hum or not root then return end
+
+    stopFly()
+
+    pcall(function()
+        for _, state in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
+            hum:SetStateEnabled(state, false)
+        end
+        hum:ChangeState(Enum.HumanoidStateType.Swimming)
+    end)
+    hum.PlatformStand = true
+    local animate = char:FindFirstChild("Animate")
+    if animate then animate.Disabled = true end
+
+    flyBG = Instance.new("BodyGyro")
+    flyBG.P = 9e4
+    flyBG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    flyBG.CFrame = root.CFrame
+    flyBG.Parent = root
+
+    flyBV = Instance.new("BodyVelocity")
+    flyBV.Velocity = Vector3.zero
+    flyBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    flyBV.Parent = root
+
+    local ctrl = { f = 0, b = 0, l = 0, r = 0 }
+
+    flyConn = RunService.RenderStepped:Connect(function()
+        if not FlyEnabled or not root.Parent then
+            stopFly()
+            return
+        end
+
+        local cam = Workspace.CurrentCamera
+        if not cam then return end
+
+        ctrl.f = UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0
+        ctrl.b = UserInputService:IsKeyDown(Enum.KeyCode.S) and -1 or 0
+        ctrl.l = UserInputService:IsKeyDown(Enum.KeyCode.A) and -1 or 0
+        ctrl.r = UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0
+
+        local move = Vector3.zero
+        if ctrl.f + ctrl.b ~= 0 or ctrl.l + ctrl.r ~= 0 then
+            local look = cam.CFrame.LookVector
+            local right = cam.CFrame.RightVector
+            move = (look * (ctrl.f + ctrl.b) + right * (ctrl.l + ctrl.r)).Unit * FlySpeed
+        end
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            move = move + Vector3.new(0, FlySpeed, 0)
+        elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+            move = move + Vector3.new(0, -FlySpeed, 0)
+        end
+
+        flyBV.Velocity = move
+        flyBG.CFrame = cam.CFrame
+    end)
+end
+
+-- 持续保持
+task.spawn(function()
+    while AL do
+        if SpeedEnabled then applySpeed() end
+        if JumpEnabled then applyJump() end
+        task.wait(0.5)
+    end
+end)
+
+-- ==================== 横版分页 UI ====================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "IG_UI"
 ScreenGui.ResetOnSpawn = false
@@ -266,8 +411,8 @@ ScreenGui.Parent = CoreGui
 
 local Main = Instance.new("Frame")
 Main.Name = "Main"
-Main.Size = UDim2.new(0, 280, 0, 500)
-Main.Position = UDim2.new(0.5, -140, 0.5, -160)
+Main.Size = UDim2.new(0, 460, 0, 280)
+Main.Position = UDim2.new(0.5, -230, 0.5, -140)
 Main.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 Main.BorderSizePixel = 0
 Main.Parent = ScreenGui
@@ -281,7 +426,7 @@ Stroke.Color = Color3.fromRGB(60, 60, 70)
 Stroke.Thickness = 1
 Stroke.Parent = Main
 
--- 标题栏
+-- 标题栏（支持鼠标 + 触摸拖动）
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 36)
 TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
@@ -303,53 +448,124 @@ local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -20, 1, 0)
 TitleLabel.Position = UDim2.new(0, 12, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "无视攻击"
+TitleLabel.Text = "功能面板"
 TitleLabel.TextColor3 = Color3.fromRGB(230, 230, 235)
 TitleLabel.TextSize = 15
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.Parent = TitleBar
 
--- 拖动
-local dragging, dragStart, startPos
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = Main.Position
-    end
-end)
-TitleBar.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStart
-        Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
+-- 通用拖动函数（支持鼠标和触摸）
+local function makeDraggable(handle, target)
+    local dragging, dragStart, startPos
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = target.Position
+        end
+    end)
+    handle.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
 
--- 内容区
-local Content = Instance.new("Frame")
-Content.Size = UDim2.new(1, -16, 1, -48)
-Content.Position = UDim2.new(0, 8, 0, 40)
-Content.BackgroundTransparency = 1
-Content.Parent = Main
+makeDraggable(TitleBar, Main)
 
-local Layout = Instance.new("UIListLayout")
-Layout.Padding = UDim.new(0, 6)
-Layout.SortOrder = Enum.SortOrder.LayoutOrder
-Layout.Parent = Content
+-- 左侧分页栏
+local Sidebar = Instance.new("Frame")
+Sidebar.Size = UDim2.new(0, 100, 1, -44)
+Sidebar.Position = UDim2.new(0, 6, 0, 40)
+Sidebar.BackgroundColor3 = Color3.fromRGB(30, 30, 36)
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = Main
 
--- 创建开关行
-local function CreateToggle(name, default, callback)
+local SidebarCorner = Instance.new("UICorner")
+SidebarCorner.CornerRadius = UDim.new(0, 6)
+SidebarCorner.Parent = Sidebar
+
+local SidebarLayout = Instance.new("UIListLayout")
+SidebarLayout.Padding = UDim.new(0, 4)
+SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+SidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+SidebarLayout.Parent = Sidebar
+
+local SidebarPad = Instance.new("UIPadding")
+SidebarPad.PaddingTop = UDim.new(0, 6)
+SidebarPad.Parent = Sidebar
+
+-- 右侧内容区
+local ContentArea = Instance.new("Frame")
+ContentArea.Size = UDim2.new(1, -118, 1, -48)
+ContentArea.Position = UDim2.new(0, 112, 0, 40)
+ContentArea.BackgroundTransparency = 1
+ContentArea.Parent = Main
+
+-- 分页容器
+local pages = {}
+local tabBtns = {}
+local currentPage = nil
+
+local function switchPage(name)
+    for n, frame in pairs(pages) do
+        frame.Visible = (n == name)
+    end
+    for n, btn in pairs(tabBtns) do
+        btn.BackgroundColor3 = (n == name) and Color3.fromRGB(70, 160, 90) or Color3.fromRGB(45, 45, 52)
+    end
+    currentPage = name
+end
+
+local function createPage(name)
+    local page = Instance.new("Frame")
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.Visible = false
+    page.Parent = ContentArea
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 6)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = page
+
+    pages[name] = page
+
+    -- 侧边按钮
+    local tabBtn = Instance.new("TextButton")
+    tabBtn.Size = UDim2.new(0, 88, 0, 32)
+    tabBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 52)
+    tabBtn.Text = name
+    tabBtn.TextColor3 = Color3.fromRGB(220, 220, 225)
+    tabBtn.TextSize = 13
+    tabBtn.Font = Enum.Font.GothamMedium
+    tabBtn.Parent = Sidebar
+    local tc = Instance.new("UICorner")
+    tc.CornerRadius = UDim.new(0, 5)
+    tc.Parent = tabBtn
+
+    tabBtn.MouseButton1Click:Connect(function()
+        switchPage(name)
+    end)
+    tabBtns[name] = tabBtn
+
+    return page
+end
+
+-- 创建开关（指定父级）
+local function CreateToggle(parent, name, default, callback)
     local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 32)
+    Row.Size = UDim2.new(1, 0, 0, 34)
     Row.BackgroundColor3 = Color3.fromRGB(32, 32, 38)
     Row.BorderSizePixel = 0
-    Row.Parent = Content
+    Row.Parent = parent
 
     local RowCorner = Instance.new("UICorner")
     RowCorner.CornerRadius = UDim.new(0, 6)
@@ -406,16 +622,16 @@ local function CreateToggle(name, default, callback)
     }
 end
 
--- 创建按钮
-local function CreateButton(name, callback)
+-- 创建按钮（指定父级）
+local function CreateButton(parent, name, callback)
     local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(1, 0, 0, 32)
+    Btn.Size = UDim2.new(1, 0, 0, 34)
     Btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
     Btn.Text = name
     Btn.TextColor3 = Color3.fromRGB(230, 230, 235)
     Btn.TextSize = 13
     Btn.Font = Enum.Font.GothamMedium
-    Btn.Parent = Content
+    Btn.Parent = parent
 
     local BtnCorner = Instance.new("UICorner")
     BtnCorner.CornerRadius = UDim.new(0, 6)
@@ -424,167 +640,21 @@ local function CreateButton(name, callback)
     Btn.MouseButton1Click:Connect(function()
         if callback then callback() end
     end)
-
     return Btn
 end
 
--- ==================== 绑定功能 ====================
-local toggles = {}
-
-toggles.IG = CreateToggle("无视攻击", false, function(v)
-    IG.on = v
-    if v then
-        local a = Workspace:FindFirstChild("AttackModel")
-        if a then bind(a) end
-        Notify("开启", "无视攻击")
-    else
-        if CON then pcall(function() CON:Disconnect() end) end
-        CON = nil
-        AM = nil
-        task.delay(0.6, rsA)
-        Notify("关闭", "无视攻击")
-    end
-end)
-
-toggles.IGW = CreateToggle("全图无视", false, function(v)
-    IGW.on = v
-    if v then
-        swW()
-        Notify("开启", "全图无视")
-    else
-        task.delay(0.2, rsW)
-        Notify("关闭", "全图无视")
-    end
-end)
-
-CreateButton("强制恢复", function()
-    IG.on = false
-    IGW.on = false
-    if CON then pcall(function() CON:Disconnect() end) end
-    CON = nil
-    AM = nil
-    toggles.IG.Set(false)
-    toggles.IGW.Set(false)
-    task.delay(0.6, function()
-        rsA()
-        rsW()
-        Notify("完成", "已恢复")
-    end)
-end)
-
-toggles.ESP = CreateToggle("敌人 ESP", false, function(v)
-    EN.esp = v
-    if v then
-        es()
-        Notify("开启", "敌人 ESP")
-    else
-        ec()
-        Notify("关闭", "敌人 ESP")
-    end
-end)
-
-toggles.AL = CreateToggle("锁定最近", false, function(v)
-    EN.al = v
-    Notify(v and "开启" or "关闭", "锁定最近")
-end)
-
--- ==================== 速度 / 跳跃 ====================
-local SpeedEnabled = false
-local JumpEnabled = false
-local SpeedValue = 16
-local JumpValue = 50
-local OriginalSpeed = nil
-local OriginalJump = nil
-
-local function captureOriginal()
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        if OriginalSpeed == nil then
-            OriginalSpeed = hum.WalkSpeed
-        end
-        if OriginalJump == nil then
-            OriginalJump = hum.JumpPower
-        end
-    end
-end
-
-local function applySpeed()
-    if not SpeedEnabled then return end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.WalkSpeed = SpeedValue
-    end
-end
-
-local function applyJump()
-    if not JumpEnabled then return end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.JumpPower = JumpValue
-        hum.UseJumpPower = true
-    end
-end
-
-local function restoreSpeed()
-    if OriginalSpeed == nil then return end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.WalkSpeed = OriginalSpeed
-    end
-end
-
-local function restoreJump()
-    if OriginalJump == nil then return end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.JumpPower = OriginalJump
-    end
-end
-
--- 角色生成时记录原始值 + 停止飞行
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(0.3)
-    captureOriginal()
-    if SpeedEnabled then applySpeed() end
-    if JumpEnabled then applyJump() end
-    if FlyEnabled then
-        FlyEnabled = false
-        stopFly()
-    end
-end)
-
--- 如果角色已经存在，立即记录
-if LocalPlayer.Character then
-    task.defer(captureOriginal)
-end
-
--- 持续保持（仅开启时）
-task.spawn(function()
-    while AL do
-        if SpeedEnabled then applySpeed() end
-        if JumpEnabled then applyJump() end
-        task.wait(0.5)
-    end
-end)
-
--- 创建输入行（带开关）
-local function CreateInputRow(name, defaultVal, onToggle, onValueChange)
+-- 创建输入行（指定父级）
+local function CreateInputRow(parent, name, defaultVal, onToggle, onValueChange)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 36)
     Row.BackgroundColor3 = Color3.fromRGB(32, 32, 38)
     Row.BorderSizePixel = 0
-    Row.Parent = Content
+    Row.Parent = parent
 
     local RowCorner = Instance.new("UICorner")
     RowCorner.CornerRadius = UDim.new(0, 6)
     RowCorner.Parent = Row
 
-    -- 开关
     local Toggle = Instance.new("TextButton")
     Toggle.Size = UDim2.new(0, 36, 0, 18)
     Toggle.Position = UDim2.new(0, 8, 0.5, -9)
@@ -605,7 +675,6 @@ local function CreateInputRow(name, defaultVal, onToggle, onValueChange)
     KnobCorner.CornerRadius = UDim.new(1, 0)
     KnobCorner.Parent = Knob
 
-    -- 名称
     local Label = Instance.new("TextLabel")
     Label.Size = UDim2.new(0, 50, 1, 0)
     Label.Position = UDim2.new(0, 50, 0, 0)
@@ -617,7 +686,6 @@ local function CreateInputRow(name, defaultVal, onToggle, onValueChange)
     Label.TextXAlignment = Enum.TextXAlignment.Left
     Label.Parent = Row
 
-    -- 输入框
     local Input = Instance.new("TextBox")
     Input.Size = UDim2.new(0, 70, 0, 24)
     Input.Position = UDim2.new(1, -80, 0.5, -12)
@@ -657,17 +725,68 @@ local function CreateInputRow(name, defaultVal, onToggle, onValueChange)
         end
     end)
 
-    return {
-        SetEnabled = setEnabled,
-        GetEnabled = function() return enabled end,
-        SetValue = function(v)
-            Input.Text = tostring(v)
-            if onValueChange then onValueChange(v) end
-        end
-    }
+    return { SetEnabled = setEnabled, GetEnabled = function() return enabled end }
 end
 
-local speedRow = CreateInputRow("速度", 16, function(v)
+-- ==================== 分页内容 ====================
+local pageEnemy = createPage("敌人")
+local pageInv = createPage("无敌")
+local pageChar = createPage("角色")
+
+-- 敌人页
+CreateToggle(pageEnemy, "敌人 ESP", false, function(v)
+    EN.esp = v
+    if v then es() else ec() end
+    Notify(v and "开启" or "关闭", "敌人 ESP")
+end)
+
+CreateToggle(pageEnemy, "锁定最近", false, function(v)
+    EN.al = v
+    Notify(v and "开启" or "关闭", "锁定最近")
+end)
+
+-- 无敌页
+CreateToggle(pageInv, "无视攻击", false, function(v)
+    IG.on = v
+    if v then
+        local a = Workspace:FindFirstChild("AttackModel")
+        if a then bind(a) end
+        Notify("开启", "无视攻击")
+    else
+        if CON then pcall(function() CON:Disconnect() end) end
+        CON = nil
+        AM = nil
+        task.delay(0.6, rsA)
+        Notify("关闭", "无视攻击")
+    end
+end)
+
+CreateToggle(pageInv, "全图无视", false, function(v)
+    IGW.on = v
+    if v then
+        swW()
+        Notify("开启", "全图无视")
+    else
+        task.delay(0.2, rsW)
+        Notify("关闭", "全图无视")
+    end
+end)
+
+CreateButton(pageInv, "强制恢复", function()
+    IG.on = false
+    IGW.on = false
+    if CON then pcall(function() CON:Disconnect() end) end
+    CON = nil
+    AM = nil
+    task.delay(0.6, function()
+        rsA()
+        rsW()
+        Notify("完成", "已恢复")
+    end)
+end)
+
+-- 角色页
+CreateInputRow(pageChar, "速度", 16, function(v)
     SpeedEnabled = v
     if v then
         applySpeed()
@@ -681,7 +800,7 @@ end, function(v)
     if SpeedEnabled then applySpeed() end
 end)
 
-local jumpRow = CreateInputRow("跳跃", 50, function(v)
+CreateInputRow(pageChar, "跳跃", 50, function(v)
     JumpEnabled = v
     if v then
         applyJump()
@@ -695,101 +814,14 @@ end, function(v)
     if JumpEnabled then applyJump() end
 end)
 
--- ==================== 飞行 ====================
-local FlyEnabled = false
-local FlySpeed = 50
-local flyBV, flyBG
-local flyConn
-
-local function stopFly()
-    if flyConn then
-        flyConn:Disconnect()
-        flyConn = nil
+CreateButton(pageChar, "飞行控制", function()
+    if FlyPanel then
+        FlyPanel.Visible = not FlyPanel.Visible
     end
-    if flyBV then pcall(function() flyBV:Destroy() end) flyBV = nil end
-    if flyBG then pcall(function() flyBG:Destroy() end) flyBG = nil end
+end)
 
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.PlatformStand = false
-        pcall(function()
-            for _, state in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
-                hum:SetStateEnabled(state, true)
-            end
-            hum:ChangeState(Enum.HumanoidStateType.Running)
-        end)
-    end
-    local animate = char and char:FindFirstChild("Animate")
-    if animate then animate.Disabled = false end
-end
-
-local function startFly()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-    if not hum or not root then return end
-
-    stopFly()
-
-    -- 禁用状态
-    pcall(function()
-        for _, state in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
-            hum:SetStateEnabled(state, false)
-        end
-        hum:ChangeState(Enum.HumanoidStateType.Swimming)
-    end)
-    hum.PlatformStand = true
-    local animate = char:FindFirstChild("Animate")
-    if animate then animate.Disabled = true end
-
-    flyBG = Instance.new("BodyGyro")
-    flyBG.P = 9e4
-    flyBG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    flyBG.CFrame = root.CFrame
-    flyBG.Parent = root
-
-    flyBV = Instance.new("BodyVelocity")
-    flyBV.Velocity = Vector3.zero
-    flyBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    flyBV.Parent = root
-
-    local ctrl = { f = 0, b = 0, l = 0, r = 0 }
-
-    flyConn = RunService.RenderStepped:Connect(function()
-        if not FlyEnabled or not root.Parent then
-            stopFly()
-            return
-        end
-
-        local cam = Workspace.CurrentCamera
-        if not cam then return end
-
-        -- 读取输入
-        ctrl.f = UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0
-        ctrl.b = UserInputService:IsKeyDown(Enum.KeyCode.S) and -1 or 0
-        ctrl.l = UserInputService:IsKeyDown(Enum.KeyCode.A) and -1 or 0
-        ctrl.r = UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0
-
-        local move = Vector3.zero
-        if ctrl.f + ctrl.b ~= 0 or ctrl.l + ctrl.r ~= 0 then
-            local look = cam.CFrame.LookVector
-            local right = cam.CFrame.RightVector
-            move = (look * (ctrl.f + ctrl.b) + right * (ctrl.l + ctrl.r)).Unit * FlySpeed
-        end
-
-        -- 上下
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            move = move + Vector3.new(0, FlySpeed, 0)
-        elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-            move = move + Vector3.new(0, -FlySpeed, 0)
-        end
-
-        flyBV.Velocity = move
-        flyBG.CFrame = cam.CFrame
-    end)
-end
+-- 默认显示敌人页
+switchPage("敌人")
 
 -- ==================== 飞行小面板 ====================
 local FlyPanel = Instance.new("Frame")
@@ -810,7 +842,6 @@ FlyPanelStroke.Color = Color3.fromRGB(60, 60, 70)
 FlyPanelStroke.Thickness = 1
 FlyPanelStroke.Parent = FlyPanel
 
--- 标题栏
 local FlyTitle = Instance.new("Frame")
 FlyTitle.Size = UDim2.new(1, 0, 0, 28)
 FlyTitle.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
@@ -860,35 +891,14 @@ FlyClose.MouseButton1Click:Connect(function()
     end
 end)
 
--- 拖动
-local flyDragging, flyDragStart, flyStartPos
-FlyTitle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        flyDragging = true
-        flyDragStart = input.Position
-        flyStartPos = FlyPanel.Position
-    end
-end)
-FlyTitle.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        flyDragging = false
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if flyDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - flyDragStart
-        FlyPanel.Position = UDim2.new(flyStartPos.X.Scale, flyStartPos.X.Offset + delta.X, flyStartPos.Y.Scale, flyStartPos.Y.Offset + delta.Y)
-    end
-end)
+makeDraggable(FlyTitle, FlyPanel)
 
--- 内容区
 local FlyContent = Instance.new("Frame")
 FlyContent.Size = UDim2.new(1, -12, 1, -36)
 FlyContent.Position = UDim2.new(0, 6, 0, 32)
 FlyContent.BackgroundTransparency = 1
 FlyContent.Parent = FlyPanel
 
--- UP / DOWN / Fly 按钮行
 local function makeFlyBtn(text, x, y, w, h, color, parent)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, w, 0, h)
@@ -909,7 +919,6 @@ local upBtn = makeFlyBtn("UP", 0, 0, 58, 28, Color3.fromRGB(50, 50, 60), FlyCont
 local downBtn = makeFlyBtn("DOWN", 64, 0, 58, 28, Color3.fromRGB(50, 50, 60), FlyContent)
 local flyBtn = makeFlyBtn("飞行", 128, 0, 58, 28, Color3.fromRGB(55, 55, 65), FlyContent)
 
--- 速度行
 local speedLabel = Instance.new("TextLabel")
 speedLabel.Size = UDim2.new(0, 40, 0, 28)
 speedLabel.Position = UDim2.new(0, 0, 0, 36)
@@ -934,7 +943,6 @@ speedVal.Parent = FlyContent
 
 local plusBtn = makeFlyBtn("+", 116, 36, 28, 28, Color3.fromRGB(50, 50, 60), FlyContent)
 
--- 飞行逻辑
 local function updateFlyBtn()
     flyBtn.BackgroundColor3 = FlyEnabled and Color3.fromRGB(70, 160, 90) or Color3.fromRGB(55, 55, 65)
     flyBtn.Text = FlyEnabled and "飞行中" or "飞行"
@@ -962,26 +970,14 @@ minusBtn.MouseButton1Click:Connect(function()
     speedVal.Text = tostring(FlySpeed)
 end)
 
--- UP / DOWN 持续上升下降
 local upHolding, downHolding = false, false
-
 upBtn.MouseButton1Down:Connect(function() upHolding = true end)
 upBtn.MouseButton1Up:Connect(function() upHolding = false end)
 upBtn.MouseLeave:Connect(function() upHolding = false end)
-
 downBtn.MouseButton1Down:Connect(function() downHolding = true end)
 downBtn.MouseButton1Up:Connect(function() downHolding = false end)
 downBtn.MouseLeave:Connect(function() downHolding = false end)
 
--- 把上下控制加入飞行循环
-local oldStartFly = startFly
-startFly = function()
-    oldStartFly()
-    -- 额外的上下按住逻辑通过 RenderStepped 处理
-end
-
--- 在现有 flyConn 之外再加一个轻量检查（实际上下已在 startFly 的 RenderStepped 里通过键盘处理）
--- 这里给按钮补一个持续位移
 RunService.RenderStepped:Connect(function()
     if not FlyEnabled then return end
     local char = LocalPlayer.Character
@@ -996,9 +992,58 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- 主界面按钮打开飞行面板
-CreateButton("飞行控制", function()
-    FlyPanel.Visible = not FlyPanel.Visible
+-- 角色重生
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.3)
+    captureOriginal()
+    if SpeedEnabled then applySpeed() end
+    if JumpEnabled then applyJump() end
+    if FlyEnabled then
+        FlyEnabled = false
+        stopFly()
+        updateFlyBtn()
+    end
+end)
+
+if LocalPlayer.Character then
+    task.defer(captureOriginal)
+end
+
+-- ==================== 悬浮圆点 ====================
+local ToggleDot = Instance.new("TextButton")
+ToggleDot.Name = "ToggleDot"
+ToggleDot.Size = UDim2.new(0, 36, 0, 36)
+ToggleDot.Position = UDim2.new(1, -50, 0, 80)
+ToggleDot.AnchorPoint = Vector2.new(1, 0)
+ToggleDot.BackgroundColor3 = Color3.fromRGB(70, 160, 90)
+ToggleDot.Text = ""
+ToggleDot.AutoButtonColor = false
+ToggleDot.Parent = ScreenGui
+
+local DotCorner = Instance.new("UICorner")
+DotCorner.CornerRadius = UDim.new(1, 0)
+DotCorner.Parent = ToggleDot
+
+local DotStroke = Instance.new("UIStroke")
+DotStroke.Color = Color3.fromRGB(100, 200, 120)
+DotStroke.Thickness = 2
+DotStroke.Parent = ToggleDot
+
+makeDraggable(ToggleDot, ToggleDot)
+
+local function toggleMain()
+    Main.Visible = not Main.Visible
+    ToggleDot.BackgroundColor3 = Main.Visible and Color3.fromRGB(70, 160, 90) or Color3.fromRGB(80, 80, 90)
+    DotStroke.Color = Main.Visible and Color3.fromRGB(100, 200, 120) or Color3.fromRGB(120, 120, 130)
+end
+
+ToggleDot.MouseButton1Click:Connect(toggleMain)
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.Insert then
+        toggleMain()
+    end
 end)
 
 -- ==================== 清理 ====================
@@ -1019,65 +1064,4 @@ getgenv().igClean = function()
     if notifySound then notifySound:Destroy() end
 end
 
-Notify("加载完成", "点击右上角圆点或按 Insert 隐藏/显示")
-
--- ==================== 悬浮开关圆点 ====================
-local ToggleDot = Instance.new("TextButton")
-ToggleDot.Name = "ToggleDot"
-ToggleDot.Size = UDim2.new(0, 36, 0, 36)
-ToggleDot.Position = UDim2.new(1, -50, 0, 80)
-ToggleDot.AnchorPoint = Vector2.new(1, 0)
-ToggleDot.BackgroundColor3 = Color3.fromRGB(70, 160, 90)
-ToggleDot.Text = ""
-ToggleDot.AutoButtonColor = false
-ToggleDot.Parent = ScreenGui
-
-local DotCorner = Instance.new("UICorner")
-DotCorner.CornerRadius = UDim.new(1, 0)
-DotCorner.Parent = ToggleDot
-
-local DotStroke = Instance.new("UIStroke")
-DotStroke.Color = Color3.fromRGB(100, 200, 120)
-DotStroke.Thickness = 2
-DotStroke.Parent = ToggleDot
-
--- 圆点拖动
-local dotDragging, dotDragStart, dotStartPos
-ToggleDot.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dotDragging = true
-        dotDragStart = input.Position
-        dotStartPos = ToggleDot.Position
-    end
-end)
-ToggleDot.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dotDragging = false
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dotDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dotDragStart
-        ToggleDot.Position = UDim2.new(
-            dotStartPos.X.Scale, dotStartPos.X.Offset + delta.X,
-            dotStartPos.Y.Scale, dotStartPos.Y.Offset + delta.Y
-        )
-    end
-end)
-
--- 点击圆点切换主界面
-local function toggleMain()
-    Main.Visible = not Main.Visible
-    ToggleDot.BackgroundColor3 = Main.Visible and Color3.fromRGB(70, 160, 90) or Color3.fromRGB(80, 80, 90)
-    DotStroke.Color = Main.Visible and Color3.fromRGB(100, 200, 120) or Color3.fromRGB(120, 120, 130)
-end
-
-ToggleDot.MouseButton1Click:Connect(toggleMain)
-
--- Insert 键开关 UI
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.Insert then
-        toggleMain()
-    end
-end)
+Notify("加载完成", "点击圆点或按 Insert 隐藏/显示")
