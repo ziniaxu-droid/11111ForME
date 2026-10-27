@@ -65,7 +65,7 @@ local AR={}
 local SP={}
 local ST={on=false,busy=false,tp=nil}
 local PF={on=false,pz=false,cf=CFrame.new(161.269272,218.317825,15.9927273),sz=Vector3.new(1024,8,1024)}
-local AG={on=false,rad=1000,dist=1000}
+local AG={on=false,rad=120,dist=120}
 
 for n in pairs(WN) do
     local o=W:FindFirstChild(n)
